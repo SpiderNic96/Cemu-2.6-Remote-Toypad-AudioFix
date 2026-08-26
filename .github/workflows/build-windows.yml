@@ -96,15 +96,18 @@ jobs:
         with:
           arch: x64
 
-      - name: Verify MSVC and MASM tools
+      - name: Verify MSVC and x64 MASM tools
         shell: pwsh
         run: |
           Write-Host "C/C++ compiler:"
-          Get-Command cl.exe | Select-Object Source
-          Write-Host "MASM assembler:"
-          Get-Command ml.exe | Select-Object Source
+          $cl = Get-Command cl.exe -ErrorAction Stop
+          $cl.Source
+          Write-Host "x64 MASM assembler:"
+          $ml64 = Get-Command ml64.exe -ErrorAction Stop
+          $ml64.Source
+          Write-Host "Compiler tool versions:"
           cl.exe 2>&1 | Select-Object -First 2
-          ml.exe 2>&1 | Select-Object -First 2
+          ml64.exe 2>&1 | Select-Object -First 2
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
@@ -126,17 +129,29 @@ jobs:
         working-directory: cemu-source
         run: dependencies\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
+      - name: Setup MSVC for CMake configure
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Configure Cemu
         shell: pwsh
         working-directory: cemu-source
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DVCPKG_INSTALL_OPTIONS="--clean-after-build"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_ASM_MASM_COMPILER=ml64.exe -DVCPKG_INSTALL_OPTIONS="--clean-after-build"
           if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed' }
+
+      - name: Setup MSVC for Cemu build
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Build Cemu
         shell: pwsh
         working-directory: cemu-source
         run: |
+          $ml64 = Get-Command ml64.exe -ErrorAction Stop
+          Write-Host "Using MASM: $($ml64.Source)"
           cmake --build build --parallel
           if ($LASTEXITCODE -ne 0) { throw 'Cemu build failed' }
 
