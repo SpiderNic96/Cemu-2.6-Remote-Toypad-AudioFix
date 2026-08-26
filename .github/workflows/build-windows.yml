@@ -1,0 +1,104 @@
+name: Build Windows Cemu 2.6 AudioFix
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: https://github.com/harrysof/Cemu-2.6-Remote-Toypad-Build.git
+  UPSTREAM_REF: main
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout AudioFix project
+        uses: actions/checkout@v4
+
+      - name: Checkout Harry Toypad Cemu 2.6 source
+        shell: pwsh
+        run: |
+          git clone --recursive --depth 1 --branch "$env:UPSTREAM_REF" "$env:UPSTREAM_REPO" cemu-source
+          if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source" }
+
+      - name: Apply Patch 001
+        shell: pwsh
+        working-directory: cemu-source
+        run: |
+          git apply --check ../patches/001-lego-audio-aux-fallback.patch
+          if ($LASTEXITCODE -ne 0) { throw "Patch 001 does not apply cleanly to the current upstream source" }
+          git apply ../patches/001-lego-audio-aux-fallback.patch
+          if ($LASTEXITCODE -ne 0) { throw "Patch 001 failed to apply" }
+          git diff --check
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.0'
+
+      - name: Bootstrap vcpkg
+        shell: cmd
+        working-directory: cemu-source
+        run: dependencies\vcpkg\bootstrap-vcpkg.bat
+
+      - name: Configure Cemu
+        shell: pwsh
+        working-directory: cemu-source
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DVCPKG_INSTALL_OPTIONS="--clean-after-build"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed" }
+
+      - name: Build Cemu
+        shell: pwsh
+        working-directory: cemu-source
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Cemu build failed" }
+
+      - name: Verify executable
+        shell: pwsh
+        working-directory: cemu-source
+        run: |
+          if (-not (Test-Path 'bin/Cemu_release.exe')) { throw 'Cemu_release.exe was not produced' }
+          Get-Item 'bin/Cemu_release.exe' | Format-List FullName,Length,LastWriteTime
+
+      - name: Package test artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item cemu-source/bin/Cemu_release.exe artifact/Cemu_release.exe
+          @'
+          @echo off
+          echo LEGO Dimensions AudioFix experimental build
+          echo.
+          echo This build uses Patch 001: opt-in AX AUX return fallback.
+          echo.
+          set CEMU_LEGO_AUDIO_AUX_FALLBACK=1
+          Cemu_release.exe
+          '@ | Set-Content -Encoding ASCII artifact/run-lego-audio-test.cmd
+          @'
+          Cemu 2.6 Toypad AudioFix - Patch 001
+
+          Base: harrysof/Cemu-2.6-Remote-Toypad-Build
+          Patch: 001-lego-audio-aux-fallback.patch
+
+          To test the experimental path, run run-lego-audio-test.cmd.
+          The script sets CEMU_LEGO_AUDIO_AUX_FALLBACK=1 before starting Cemu.
+
+          Without that environment variable the experimental audio path is inactive.
+          This is an experimental diagnostic build, not a confirmed final audio fix.
+          '@ | Set-Content -Encoding UTF8 artifact/README-AUDIO-TEST.txt
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cemu-2.6-Toypad-LEGO-AudioFix-Windows-x64
+          path: artifact
+          if-no-files-found: error
+          retention-days: 14
