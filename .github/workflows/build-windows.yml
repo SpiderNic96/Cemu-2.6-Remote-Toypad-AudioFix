@@ -30,9 +30,6 @@ jobs:
         run: |
           $upstreamUrl = "https://github.com/$env:UPSTREAM_REPO.git"
           Write-Host "Cloning upstream source from $upstreamUrl"
-          # Harry's 2.6 fork is a flattened copy: .gitmodules documents dependencies,
-          # but the current Git tree does not contain gitlinks for them. Do not use
-          # --recurse-submodules here; populate the required dependencies explicitly.
           git clone --depth 1 --branch $env:UPSTREAM_REF $upstreamUrl cemu-source
           if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source from $upstreamUrl" }
 
@@ -71,7 +68,6 @@ jobs:
             }
           }
 
-          # cubeb's public headers live under include/cubeb, not cubeb/cubeb.
           $required = @(
             'dependencies/vcpkg/bootstrap-vcpkg.bat',
             'dependencies/imgui/imgui.h',
@@ -94,6 +90,21 @@ jobs:
           git apply ../patches/001-lego-audio-aux-fallback.patch
           if ($LASTEXITCODE -ne 0) { throw 'Patch 001 failed to apply' }
           git diff --check
+
+      - name: Setup MSVC build environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Verify MSVC and MASM tools
+        shell: pwsh
+        run: |
+          Write-Host "C/C++ compiler:"
+          Get-Command cl.exe | Select-Object Source
+          Write-Host "MASM assembler:"
+          Get-Command ml.exe | Select-Object Source
+          cl.exe 2>&1 | Select-Object -First 2
+          ml.exe 2>&1 | Select-Object -First 2
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
