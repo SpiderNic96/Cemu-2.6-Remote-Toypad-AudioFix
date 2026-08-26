@@ -30,53 +30,59 @@ jobs:
         run: |
           $upstreamUrl = "https://github.com/$env:UPSTREAM_REPO.git"
           Write-Host "Cloning upstream source from $upstreamUrl"
-          git clone --depth 1 --branch $env:UPSTREAM_REF --recurse-submodules --shallow-submodules $upstreamUrl cemu-source
+          # Harry's 2.6 fork is a flattened copy: .gitmodules documents dependencies,
+          # but the current Git tree does not contain gitlinks for them. Do not use
+          # --recurse-submodules here; populate the required dependencies explicitly.
+          git clone --depth 1 --branch $env:UPSTREAM_REF $upstreamUrl cemu-source
           if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source from $upstreamUrl" }
 
-          git -C cemu-source submodule sync --recursive
-          git -C cemu-source submodule update --init --recursive --force --jobs 8
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to initialize Cemu dependency submodules' }
+          $deps = @(
+            @{ Path='dependencies/vcpkg'; Url='https://github.com/microsoft/vcpkg.git'; Ref='master'; Nested=$false },
+            @{ Path='dependencies/imgui'; Url='https://github.com/ocornut/imgui.git'; Ref='f65bcf481ab34cd07d3909aab1479f409fa79f2f'; Nested=$false },
+            @{ Path='dependencies/cubeb'; Url='https://github.com/mozilla/cubeb.git'; Ref='2071354a69aca7ed6df3b4222e305746c2113f60'; Nested=$true },
+            @{ Path='dependencies/Vulkan-Headers'; Url='https://github.com/KhronosGroup/Vulkan-Headers.git'; Ref='01393c3df0e5285b54ee6527466513f9e614be94'; Nested=$false },
+            @{ Path='dependencies/ZArchive'; Url='https://github.com/Exzap/ZArchive.git'; Ref='d2c717730092c7bf8cbb033b12fd4001b7c4d932'; Nested=$false }
+          )
 
-          Write-Host 'Submodule status after recursive checkout:'
-          git -C cemu-source submodule status --recursive
+          foreach ($dep in $deps) {
+            $target = Join-Path 'cemu-source' $dep.Path
+            if (-not (Test-Path (Join-Path $target '.git'))) {
+              if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+              Write-Host "Cloning $($dep.Path)"
+              git clone $dep.Url $target
+              if ($LASTEXITCODE -ne 0) { throw "Failed to clone $($dep.Path)" }
+            }
 
-          $missing = @()
-          $paths = git -C cemu-source config -f .gitmodules --get-regexp '^submodule\..*\.path$'
-          foreach ($line in $paths) {
-            $parts = $line -split '\s+', 2
-            if ($parts.Count -lt 2) { continue }
-            $section = $parts[0] -replace '\.path$',''
-            $path = $parts[1]
-            if (-not (Test-Path (Join-Path 'cemu-source' $path))) {
-              $missing += [PSCustomObject]@{ Section=$section; Path=$path }
+            Write-Host "Pinning $($dep.Path) to $($dep.Ref)"
+            if ($dep.Ref -eq 'master') {
+              git -C $target fetch --depth 1 origin master
+              if ($LASTEXITCODE -ne 0) { throw "Failed to fetch master for $($dep.Path)" }
+              git -C $target checkout --detach origin/master
+            } else {
+              git -C $target fetch --depth 1 origin $dep.Ref
+              if ($LASTEXITCODE -ne 0) { throw "Failed to fetch $($dep.Ref) for $($dep.Path)" }
+              git -C $target checkout --detach $dep.Ref
+            }
+            if ($LASTEXITCODE -ne 0) { throw "Failed to checkout $($dep.Ref) for $($dep.Path)" }
+
+            if ($dep.Nested) {
+              git -C $target submodule update --init --recursive
+              if ($LASTEXITCODE -ne 0) { throw 'Failed to initialize cubeb nested submodules' }
             }
           }
 
-          if ($missing.Count -gt 0) {
-            Write-Host 'Some submodules were not materialized by git. Repairing from the exact gitlink commits.'
-            foreach ($item in $missing) {
-              $url = git -C cemu-source config -f .gitmodules --get "$($item.Section).url"
-              $tree = git -C cemu-source ls-tree HEAD -- $($item.Path)
-              if (-not $tree) { throw "No gitlink found for $($item.Path)" }
-              $sha = (($tree -split '\s+')[2])
-              $target = Join-Path 'cemu-source' $($item.Path)
-              New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
-              git clone --no-checkout "$url" "$target"
-              if ($LASTEXITCODE -ne 0) { throw "Failed to clone submodule $($item.Path) from $url" }
-              git -C "$target" fetch --depth 1 origin "$sha"
-              if ($LASTEXITCODE -ne 0) { throw "Failed to fetch exact submodule commit $sha for $($item.Path)" }
-              git -C "$target" checkout --detach "$sha"
-              if ($LASTEXITCODE -ne 0) { throw "Failed to checkout exact submodule commit $sha for $($item.Path)" }
-            }
+          $required = @(
+            'dependencies/vcpkg/bootstrap-vcpkg.bat',
+            'dependencies/imgui/imgui.h',
+            'dependencies/cubeb/cubeb/cubeb.h',
+            'dependencies/Vulkan-Headers/include/vulkan/vulkan.h',
+            'dependencies/ZArchive/CMakeLists.txt'
+          )
+          foreach ($path in $required) {
+            $full = Join-Path $env:GITHUB_WORKSPACE (Join-Path 'cemu-source' $path)
+            if (-not (Test-Path $full)) { throw "Required dependency file is missing: $full" }
+            Write-Host "Verified $path"
           }
-
-          $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'cemu-source/dependencies/vcpkg/bootstrap-vcpkg.bat'
-          if (-not (Test-Path $vcpkg)) {
-            Write-Host 'Final submodule status:'
-            git -C cemu-source submodule status --recursive
-            throw "Missing vcpkg bootstrap script: $vcpkg"
-          }
-          Write-Host "Found vcpkg bootstrap: $vcpkg"
 
       - name: Apply Patch 001
         shell: pwsh
@@ -93,23 +99,33 @@ jobs:
         with:
           cmake-version: '3.29.0'
 
+      - name: Ensure Ninja
+        shell: pwsh
+        run: |
+          $ninja = Get-Command ninja -ErrorAction SilentlyContinue
+          if (-not $ninja) {
+            python -m pip install ninja
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to install Ninja' }
+          }
+          ninja --version
+
       - name: Bootstrap vcpkg
         shell: cmd
         working-directory: cemu-source
-        run: dependencies\vcpkg\bootstrap-vcpkg.bat
+        run: dependencies\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure Cemu
         shell: pwsh
         working-directory: cemu-source
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DVCPKG_INSTALL_OPTIONS="--clean-after-build"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DVCPKG_INSTALL_OPTIONS="--clean-after-build"
           if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed' }
 
       - name: Build Cemu
         shell: pwsh
         working-directory: cemu-source
         run: |
-          cmake --build build --config Release --parallel
+          cmake --build build --parallel
           if ($LASTEXITCODE -ne 0) { throw 'Cemu build failed' }
 
       - name: Verify executable
