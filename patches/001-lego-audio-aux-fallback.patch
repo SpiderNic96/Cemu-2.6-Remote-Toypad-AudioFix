@@ -1,15 +1,75 @@
 diff --git a/src/Cafe/OS/libs/snd_core/ax.h b/src/Cafe/OS/libs/snd_core/ax.h
+index d9bbbf1..d345e80 100644
 --- a/src/Cafe/OS/libs/snd_core/ax.h
 +++ b/src/Cafe/OS/libs/snd_core/ax.h
-@@ -1,1 +1,2 @@
-+// PATCH 001 adds an opt-in raw AUX input accessor; see ax_aux.cpp.
- diff --git a/src/Cafe/OS/libs/snd_core/ax_aux.cpp b/src/Cafe/OS/libs/snd_core/ax_aux.cpp
+@@ -303,6 +303,7 @@ namespace snd_core
+ 	void AXAux_Process();
+ 	
+ 	sint32be* AXAux_GetInputBuffer(sint32 device, sint32 deviceIndex, sint32 auxBus);
++	sint32be* AXAux_GetRawInputBuffer(sint32 device, sint32 deviceIndex, sint32 auxBus);
+ 	sint32be* AXAux_GetOutputBuffer(sint32 device, sint32 deviceIndex, sint32 auxBus);
+ 
+ 	sint32 AXGetAuxCallback(sint32 device, sint32 deviceIndex, uint32 auxBusIndex, MEMPTR<uint32be> funcPtrOut, MEMPTR<uint32be> contextPtrOut);
+
+diff --git a/src/Cafe/OS/libs/snd_core/ax_aux.cpp b/src/Cafe/OS/libs/snd_core/ax_aux.cpp
+index a917656..9e2ab41 100644
 --- a/src/Cafe/OS/libs/snd_core/ax_aux.cpp
 +++ b/src/Cafe/OS/libs/snd_core/ax_aux.cpp
-@@ -1,1 +1,2 @@
-+// PATCH 001 implementation is injected by scripts/apply-audio-patch.ps1.
- diff --git a/src/Cafe/OS/libs/snd_core/ax_mix.cpp b/src/Cafe/OS/libs/snd_core/ax_mix.cpp
+@@ -91,6 +91,24 @@ namespace snd_core
+ 		return nullptr;
+ 	}
+ 
++	// Experimental LEGO Dimensions compatibility path: return raw AUX input even without a callback.
++	sint32be* AXAux_GetRawInputBuffer(sint32 device, sint32 deviceIndex, sint32 auxBus)
++	{
++		if (auxBus < 0 || auxBus >= AX_AUX_BUS_COUNT)
++			return nullptr;
++		if (device == AX_DEV_TV)
++		{
++			cemu_assert_debug(deviceIndex == 0);
++			return __AXAuxTVBuffer->GetBuffer(auxBus, __AXCurrentAuxInputFrameIndex);
++		}
++		else if (device == AX_DEV_DRC)
++		{
++			cemu_assert_debug(deviceIndex >= 0 && deviceIndex <= 1);
++			return __AXAuxDRCBuffer[deviceIndex].GetBuffer(auxBus, __AXCurrentAuxInputFrameIndex);
++		}
++		return nullptr;
++	}
++
+ 	sint32be* AXAux_GetOutputBuffer(sint32 device, sint32 deviceIndex, sint32 auxBus)
+ 	{
+ 		uint32 outputFrameIndex = AXAux_GetOutputFrameIndex();
+
+diff --git a/src/Cafe/OS/libs/snd_core/ax_mix.cpp b/src/Cafe/OS/libs/snd_core/ax_mix.cpp
+index 3fdca1f..f96beb6 100644
 --- a/src/Cafe/OS/libs/snd_core/ax_mix.cpp
 +++ b/src/Cafe/OS/libs/snd_core/ax_mix.cpp
-@@ -1,1 +1,2 @@
-+// PATCH 001 implementation is injected by scripts/apply-audio-patch.ps1.
+@@ -1,3 +1,5 @@
++#include <cstdlib>
++#include <cstring>
+ #include "Cafe/OS/libs/snd_core/ax.h"
+ #include "Cafe/OS/libs/snd_core/ax_internal.h"
+ #include "Cafe/HW/MMU/MMU.h"
+@@ -909,7 +911,20 @@ namespace snd_core
+ 		{
+ 			sint32be* auxOutput = AXAux_GetOutputBuffer(AX_DEV_TV, 0, auxBus);
+ 			if (auxOutput == nullptr)
++			{
++				const char* fallback = std::getenv("CEMU_LEGO_AUDIO_AUX_FALLBACK");
++				if (fallback && std::strcmp(fallback, "1") == 0)
++				{
++					sint32be* auxInput = AXAux_GetRawInputBuffer(AX_DEV_TV, 0, auxBus);
++					if (auxInput != nullptr)
++					{
++						uint16 auxReturnVolume = __AXTVAuxReturnVolume[auxBus];
++						sint16 auxReturnDelta = 0;
++						AXAuxMix_MixProcessedAuxSamplesIntoOutput(auxInput, __AXMixBufferTV, sampleCount * AX_TV_CHANNEL_COUNT, &auxReturnVolume, auxReturnDelta);
++					}
++				}
+ 				continue;
++			}
+ 			// AUX return from output buffer
+ 			uint16 auxReturnVolume = __AXTVAuxReturnVolume[auxBus];
+ 			sint16 auxReturnDelta = 0;
+ 			AXAuxMix_MixProcessedAuxSamplesIntoOutput(auxOutput, __AXMixBufferTV, sampleCount * AX_TV_CHANNEL_COUNT, &auxReturnVolume, auxReturnDelta);
