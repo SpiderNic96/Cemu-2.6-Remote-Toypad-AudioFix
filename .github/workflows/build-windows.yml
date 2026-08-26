@@ -24,8 +24,14 @@ jobs:
       - name: Checkout Harry Toypad Cemu 2.6 source
         shell: pwsh
         run: |
-          git clone --recursive --depth 1 --branch "$env:UPSTREAM_REF" "$env:UPSTREAM_REPO" cemu-source
+          git clone --depth 1 --branch "$env:UPSTREAM_REF" "$env:UPSTREAM_REPO" cemu-source
           if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source" }
+          git -C cemu-source submodule sync --recursive
+          git -C cemu-source submodule update --init --recursive
+          if ($LASTEXITCODE -ne 0) { throw "Failed to initialize Cemu dependency submodules" }
+          if (-not (Test-Path 'cemu-source/dependencies/vcpkg/bootstrap-vcpkg.bat')) {
+            throw "vcpkg submodule was not initialized: dependencies/vcpkg/bootstrap-vcpkg.bat is missing"
+          }
 
       - name: Apply Patch 001
         shell: pwsh
