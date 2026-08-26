@@ -12,6 +12,10 @@ env:
   UPSTREAM_REPO: harrysof/Cemu-2.6-Remote-Toypad-Build
   UPSTREAM_REF: main
 
+defaults:
+  run:
+    shell: pwsh
+
 jobs:
   build-windows:
     runs-on: windows-2022
@@ -24,8 +28,11 @@ jobs:
       - name: Checkout Harry Toypad Cemu 2.6 source
         shell: pwsh
         run: |
-          git clone --depth 1 --branch "$env:UPSTREAM_REF" --recurse-submodules --shallow-submodules "$env:UPSTREAM_REPO" cemu-source
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to clone upstream Toypad source' }
+          $upstreamUrl = "https://github.com/$env:UPSTREAM_REPO.git"
+          Write-Host "Cloning upstream source from $upstreamUrl"
+          git clone --depth 1 --branch $env:UPSTREAM_REF --recurse-submodules --shallow-submodules $upstreamUrl cemu-source
+          if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source from $upstreamUrl" }
+
           git -C cemu-source submodule sync --recursive
           git -C cemu-source submodule update --init --recursive --force --jobs 8
           if ($LASTEXITCODE -ne 0) { throw 'Failed to initialize Cemu dependency submodules' }
