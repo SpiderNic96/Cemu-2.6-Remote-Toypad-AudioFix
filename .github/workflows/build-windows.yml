@@ -71,10 +71,11 @@ jobs:
             }
           }
 
+          # cubeb's public headers live under include/cubeb, not cubeb/cubeb.
           $required = @(
             'dependencies/vcpkg/bootstrap-vcpkg.bat',
             'dependencies/imgui/imgui.h',
-            'dependencies/cubeb/cubeb/cubeb.h',
+            'dependencies/cubeb/include/cubeb/cubeb.h',
             'dependencies/Vulkan-Headers/include/vulkan/vulkan.h',
             'dependencies/ZArchive/CMakeLists.txt'
           )
