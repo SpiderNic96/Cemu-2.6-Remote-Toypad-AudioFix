@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  UPSTREAM_REPO: https://github.com/harrysof/Cemu-2.6-Remote-Toypad-Build.git
+  UPSTREAM_REPO: harrysof/Cemu-2.6-Remote-Toypad-Build
   UPSTREAM_REF: main
 
 jobs:
@@ -22,25 +22,35 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Checkout Harry Toypad Cemu 2.6 source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ env.UPSTREAM_REF }}
+          path: cemu-source
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Verify Cemu dependencies
         shell: pwsh
         run: |
-          git clone --depth 1 --branch "$env:UPSTREAM_REF" "$env:UPSTREAM_REPO" cemu-source
-          if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source" }
-          git -C cemu-source submodule sync --recursive
-          git -C cemu-source submodule update --init --recursive
-          if ($LASTEXITCODE -ne 0) { throw "Failed to initialize Cemu dependency submodules" }
-          if (-not (Test-Path 'cemu-source/dependencies/vcpkg/bootstrap-vcpkg.bat')) {
-            throw "vcpkg submodule was not initialized: dependencies/vcpkg/bootstrap-vcpkg.bat is missing"
+          $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'cemu-source/dependencies/vcpkg/bootstrap-vcpkg.bat'
+          if (-not (Test-Path $vcpkg)) {
+            Write-Host 'Cemu source checkout is missing the vcpkg submodule.'
+            Write-Host 'Submodule status:'
+            git -C cemu-source submodule status --recursive
+            throw "Missing $vcpkg"
           }
+          Write-Host "Found vcpkg bootstrap: $vcpkg"
+          git -C cemu-source submodule status --recursive
 
       - name: Apply Patch 001
         shell: pwsh
         working-directory: cemu-source
         run: |
           git apply --check ../patches/001-lego-audio-aux-fallback.patch
-          if ($LASTEXITCODE -ne 0) { throw "Patch 001 does not apply cleanly to the current upstream source" }
+          if ($LASTEXITCODE -ne 0) { throw 'Patch 001 does not apply cleanly to the current upstream source' }
           git apply ../patches/001-lego-audio-aux-fallback.patch
-          if ($LASTEXITCODE -ne 0) { throw "Patch 001 failed to apply" }
+          if ($LASTEXITCODE -ne 0) { throw 'Patch 001 failed to apply' }
           git diff --check
 
       - name: Setup CMake
@@ -58,14 +68,14 @@ jobs:
         working-directory: cemu-source
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DVCPKG_INSTALL_OPTIONS="--clean-after-build"
-          if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed" }
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed' }
 
       - name: Build Cemu
         shell: pwsh
         working-directory: cemu-source
         run: |
           cmake --build build --config Release --parallel
-          if ($LASTEXITCODE -ne 0) { throw "Cemu build failed" }
+          if ($LASTEXITCODE -ne 0) { throw 'Cemu build failed' }
 
       - name: Verify executable
         shell: pwsh
