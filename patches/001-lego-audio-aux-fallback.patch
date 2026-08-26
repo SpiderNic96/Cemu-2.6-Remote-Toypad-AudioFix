@@ -1,0 +1,15 @@
+diff --git a/src/Cafe/OS/libs/snd_core/ax.h b/src/Cafe/OS/libs/snd_core/ax.h
+--- a/src/Cafe/OS/libs/snd_core/ax.h
++++ b/src/Cafe/OS/libs/snd_core/ax.h
+@@ -1,1 +1,2 @@
++// PATCH 001 adds an opt-in raw AUX input accessor; see ax_aux.cpp.
+ diff --git a/src/Cafe/OS/libs/snd_core/ax_aux.cpp b/src/Cafe/OS/libs/snd_core/ax_aux.cpp
+--- a/src/Cafe/OS/libs/snd_core/ax_aux.cpp
++++ b/src/Cafe/OS/libs/snd_core/ax_aux.cpp
+@@ -1,1 +1,2 @@
++// PATCH 001 implementation is injected by scripts/apply-audio-patch.ps1.
+ diff --git a/src/Cafe/OS/libs/snd_core/ax_mix.cpp b/src/Cafe/OS/libs/snd_core/ax_mix.cpp
+--- a/src/Cafe/OS/libs/snd_core/ax_mix.cpp
++++ b/src/Cafe/OS/libs/snd_core/ax_mix.cpp
+@@ -1,1 +1,2 @@
++// PATCH 001 implementation is injected by scripts/apply-audio-patch.ps1.
