@@ -22,26 +22,54 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Checkout Harry Toypad Cemu 2.6 source
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ env.UPSTREAM_REF }}
-          path: cemu-source
-          fetch-depth: 1
-          submodules: recursive
-
-      - name: Verify Cemu dependencies
         shell: pwsh
         run: |
+          git clone --depth 1 --branch "$env:UPSTREAM_REF" --recurse-submodules --shallow-submodules "$env:UPSTREAM_REPO" cemu-source
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to clone upstream Toypad source' }
+          git -C cemu-source submodule sync --recursive
+          git -C cemu-source submodule update --init --recursive --force --jobs 8
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to initialize Cemu dependency submodules' }
+
+          Write-Host 'Submodule status after recursive checkout:'
+          git -C cemu-source submodule status --recursive
+
+          $missing = @()
+          $paths = git -C cemu-source config -f .gitmodules --get-regexp '^submodule\..*\.path$'
+          foreach ($line in $paths) {
+            $parts = $line -split '\s+', 2
+            if ($parts.Count -lt 2) { continue }
+            $section = $parts[0] -replace '\.path$',''
+            $path = $parts[1]
+            if (-not (Test-Path (Join-Path 'cemu-source' $path))) {
+              $missing += [PSCustomObject]@{ Section=$section; Path=$path }
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Host 'Some submodules were not materialized by git. Repairing from the exact gitlink commits.'
+            foreach ($item in $missing) {
+              $url = git -C cemu-source config -f .gitmodules --get "$($item.Section).url"
+              $tree = git -C cemu-source ls-tree HEAD -- $($item.Path)
+              if (-not $tree) { throw "No gitlink found for $($item.Path)" }
+              $sha = (($tree -split '\s+')[2])
+              $target = Join-Path 'cemu-source' $($item.Path)
+              New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
+              git clone --no-checkout "$url" "$target"
+              if ($LASTEXITCODE -ne 0) { throw "Failed to clone submodule $($item.Path) from $url" }
+              git -C "$target" fetch --depth 1 origin "$sha"
+              if ($LASTEXITCODE -ne 0) { throw "Failed to fetch exact submodule commit $sha for $($item.Path)" }
+              git -C "$target" checkout --detach "$sha"
+              if ($LASTEXITCODE -ne 0) { throw "Failed to checkout exact submodule commit $sha for $($item.Path)" }
+            }
+          }
+
           $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'cemu-source/dependencies/vcpkg/bootstrap-vcpkg.bat'
           if (-not (Test-Path $vcpkg)) {
-            Write-Host 'Cemu source checkout is missing the vcpkg submodule.'
-            Write-Host 'Submodule status:'
+            Write-Host 'Final submodule status:'
             git -C cemu-source submodule status --recursive
-            throw "Missing $vcpkg"
+            throw "Missing vcpkg bootstrap script: $vcpkg"
           }
           Write-Host "Found vcpkg bootstrap: $vcpkg"
-          git -C cemu-source submodule status --recursive
 
       - name: Apply Patch 001
         shell: pwsh
