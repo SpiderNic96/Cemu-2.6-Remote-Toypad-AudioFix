@@ -1,7 +1,7 @@
 diff --git a/src/Cafe/OS/libs/snd_core/ax_voice.cpp b/src/Cafe/OS/libs/snd_core/ax_voice.cpp
 --- a/src/Cafe/OS/libs/snd_core/ax_voice.cpp
 +++ b/src/Cafe/OS/libs/snd_core/ax_voice.cpp
-@@ -556,6 +556,14 @@
+@@ -556,7 +556,15 @@
  	sint32 AXSetVoiceDeviceMix(AXVPB* vpb, sint32 device, sint32 deviceIndex, AXCHMIX_DEPR* mix)
  	{
  		if (vpb == nullptr)
@@ -20,7 +20,7 @@ diff --git a/src/Cafe/OS/libs/snd_core/ax_voice.cpp b/src/Cafe/OS/libs/snd_core/
  		sint32 r = AXIsValidDevice(device, deviceIndex);
  		if (r)
  			return r;
-@@ -744,9 +752,15 @@
+@@ -744,7 +752,13 @@
  	void AXSetVoiceVe(AXVPB* vpb, AXPBVE* ve)
  	{
  		AXVPBInternal_t* internal = __AXVPBInternalVoiceArray + (sint32)vpb->index;
