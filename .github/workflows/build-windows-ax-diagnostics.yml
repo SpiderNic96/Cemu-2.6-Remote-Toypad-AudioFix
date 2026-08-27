@@ -1,0 +1,156 @@
+name: Build Windows Cemu 2.6 AX Diagnostics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'patches/002-ax-audio-diagnostics.patch'
+      - '.github/workflows/build-windows-ax-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: harrysof/Cemu-2.6-Remote-Toypad-Build
+  UPSTREAM_REF: main
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout AudioFix project
+        uses: actions/checkout@v4
+
+      - name: Checkout Harry Toypad Cemu 2.6 source
+        run: |
+          git clone --depth 1 --branch $env:UPSTREAM_REF "https://github.com/$env:UPSTREAM_REPO.git" cemu-source
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to clone upstream source' }
+          $deps = @(
+            @{ Path='dependencies/vcpkg'; Url='https://github.com/microsoft/vcpkg.git'; Ref='master'; Nested=$false },
+            @{ Path='dependencies/imgui'; Url='https://github.com/ocornut/imgui.git'; Ref='f65bcf481ab34cd07d3909aab1479f409fa79f2f'; Nested=$false },
+            @{ Path='dependencies/cubeb'; Url='https://github.com/mozilla/cubeb.git'; Ref='2071354a69aca7ed6df3b4222e305746c2113f60'; Nested=$true },
+            @{ Path='dependencies/Vulkan-Headers'; Url='https://github.com/KhronosGroup/Vulkan-Headers.git'; Ref='01393c3df0e5285b54ee6527466513f9e614be94'; Nested=$false },
+            @{ Path='dependencies/ZArchive'; Url='https://github.com/Exzap/ZArchive.git'; Ref='d2c717730092c7bf8cbb033b12fd4001b7c4d932'; Nested=$false }
+          )
+          foreach ($dep in $deps) {
+            $target = Join-Path 'cemu-source' $dep.Path
+            if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+            git clone $dep.Url $target
+            if ($LASTEXITCODE -ne 0) { throw "Failed to clone $($dep.Path)" }
+            if ($dep.Ref -eq 'master') {
+              git -C $target fetch --depth 1 origin master
+              git -C $target checkout --detach origin/master
+            } else {
+              git -C $target fetch --depth 1 origin $dep.Ref
+              git -C $target checkout --detach $dep.Ref
+            }
+            if ($LASTEXITCODE -ne 0) { throw "Failed to checkout $($dep.Ref) for $($dep.Path)" }
+            if ($dep.Nested) {
+              git -C $target submodule update --init --recursive
+              if ($LASTEXITCODE -ne 0) { throw 'Failed to initialize cubeb nested submodules' }
+            }
+          }
+          $required = @(
+            'dependencies/vcpkg/bootstrap-vcpkg.bat',
+            'dependencies/imgui/imgui.h',
+            'dependencies/cubeb/include/cubeb/cubeb.h',
+            'dependencies/Vulkan-Headers/include/vulkan/vulkan.h',
+            'dependencies/ZArchive/CMakeLists.txt'
+          )
+          foreach ($path in $required) {
+            $full = Join-Path $env:GITHUB_WORKSPACE (Join-Path 'cemu-source' $path)
+            if (-not (Test-Path $full)) { throw "Required dependency file is missing: $full" }
+          }
+
+      - name: Apply AX diagnostic patch
+        working-directory: cemu-source
+        run: |
+          git apply --check ../patches/002-ax-audio-diagnostics.patch
+          if ($LASTEXITCODE -ne 0) { throw 'AX diagnostic patch does not apply cleanly' }
+          git apply ../patches/002-ax-audio-diagnostics.patch
+          if ($LASTEXITCODE -ne 0) { throw 'AX diagnostic patch failed to apply' }
+          git diff --check
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Verify MSVC and MASM
+        run: |
+          Get-Command cl.exe -ErrorAction Stop | Select-Object -ExpandProperty Source
+          Get-Command ml64.exe -ErrorAction Stop | Select-Object -ExpandProperty Source
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.0'
+
+      - name: Ensure Ninja
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { python -m pip install ninja }
+          ninja --version
+
+      - name: Bootstrap vcpkg
+        shell: cmd
+        working-directory: cemu-source
+        run: dependencies\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure Cemu
+        working-directory: cemu-source
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_ASM_MASM_COMPILER=ml64.exe -DVCPKG_INSTALL_OPTIONS="--clean-after-build"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed' }
+
+      - name: Build diagnostic Cemu
+        working-directory: cemu-source
+        run: |
+          cmake --build build --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'Cemu diagnostic build failed' }
+
+      - name: Verify executable
+        working-directory: cemu-source
+        run: |
+          if (-not (Test-Path 'bin/Cemu_release.exe')) { throw 'Cemu_release.exe was not produced' }
+          Get-Item 'bin/Cemu_release.exe' | Format-List FullName,Length,LastWriteTime
+
+      - name: Package diagnostic artifact
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item cemu-source/bin/Cemu_release.exe artifact/Cemu_AX_Diagnostics.exe
+          @'
+          @echo off
+          echo LEGO Dimensions Cemu 2.6 AX diagnostics build
+          echo.
+          echo This build is diagnostic-only. It does NOT alter audio output.
+          echo Enable SoundAPI logging in Cemu, reproduce the dialogue bug, then save the log.
+          echo.
+          Cemu_AX_Diagnostics.exe
+          '@ | Set-Content -Encoding ASCII artifact/run-ax-diagnostics.cmd
+          @'
+          Cemu 2.6 AX diagnostic build
+
+          Purpose: capture the game's AX voice envelope and device-mix requests.
+
+          Logged calls:
+            AXSetVoiceVe
+            AXSetVoiceDeviceMix
+
+          The diagnostic patch does not redirect, boost, attenuate, or otherwise change audio.
+          Use this build to reproduce gameplay dialogue, gameplay SFX, music, and a cutscene dialogue sample.
+          Compare the resulting Cemu log entries.
+          '@ | Set-Content -Encoding UTF8 artifact/README-AX-DIAGNOSTICS.txt
+
+      - name: Upload diagnostic artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cemu-2.6-AX-Diagnostics-Windows-x64
+          path: artifact
+          if-no-files-found: error
+          retention-days: 14
