@@ -8,6 +8,10 @@ on:
       - '.github/workflows/build-windows.yml'
   workflow_dispatch:
 
+concurrency:
+  group: cemu-2.6-audiofix-full-build
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
