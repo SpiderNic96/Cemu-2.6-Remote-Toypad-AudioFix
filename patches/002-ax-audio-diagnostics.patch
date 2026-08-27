@@ -1,0 +1,19 @@
+diff --git a/src/Cafe/OS/libs/snd_core/ax_voice.cpp b/src/Cafe/OS/libs/snd_core/ax_voice.cpp
+index 877eecab1..000000000 100644
+--- a/src/Cafe/OS/libs/snd_core/ax_voice.cpp
++++ b/src/Cafe/OS/libs/snd_core/ax_voice.cpp
+@@ -744,9 +744,15 @@
+ 	void AXSetVoiceVe(AXVPB* vpb, AXPBVE* ve)
+ 	{
+ 		AXVPBInternal_t* internal = __AXVPBInternalVoiceArray + (sint32)vpb->index;
+ 		internal->veVolume = ve->currentVolume;
+ 		internal->veDelta = ve->currentDelta;
++		cemuLog_log(LogType::SoundAPI,
++			"LEGO-AUDIO AXSetVoiceVe voice={} volume=0x{:04x} delta={}",
++			(uint32)vpb->index,
++			(uint32)_swapEndianU16(ve->currentVolume),
++			(sint32)(sint16)_swapEndianU16((uint16)ve->currentDelta));
+ 		AXSetSyncFlag(vpb, AX_SYNCFLAG_VE);
+ 		AXVoiceProtection_Acquire(vpb);
+ 	}
+*** End Patch
