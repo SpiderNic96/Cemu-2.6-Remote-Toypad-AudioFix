@@ -3,6 +3,9 @@ name: Build Windows Cemu 2.6 AudioFix
 on:
   push:
     branches: [main]
+    paths:
+      - 'patches/001-lego-audio-aux-fallback.patch'
+      - '.github/workflows/build-windows.yml'
   workflow_dispatch:
 
 permissions:
