@@ -25,7 +25,7 @@ function Find-CemuLog {
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
 
     if (-not $candidates) {
-        throw "Could not find log.txt. Start Cemu once, enable SoundAPI logging, then rerun this script with -CemuLogPath <path>."
+        throw "Could not find log.txt. Start Cemu once, enable SoundAPI logging, then rerun with -CemuLogPath <path>."
     }
 
     return (Get-Item $candidates[0]).FullName
@@ -36,7 +36,6 @@ $logPath = Find-CemuLog -ExplicitPath $CemuLogPath
 $eventFile = Join-Path $OutputDirectory 'ax-events.ndjson'
 $rawFile = Join-Path $OutputDirectory 'cemu-log-snapshot.txt'
 $metaFile = Join-Path $OutputDirectory 'session.txt'
-$markerFile = Join-Path $OutputDirectory 'markers.ndjson'
 
 @(
     "Started: $(Get-Date -Format o)",
@@ -44,7 +43,7 @@ $markerFile = Join-Path $OutputDirectory 'markers.ndjson'
     "Host: $env:COMPUTERNAME",
     "User: $env:USERNAME",
     "Purpose: LEGO Dimensions AX runtime investigation",
-    "This collector does not modify Cemu or audio output."
+    "Collector: incremental, read-only log watcher"
 ) | Set-Content -Encoding UTF8 $metaFile
 
 $patterns = @(
@@ -58,6 +57,13 @@ $patterns = @(
     'AXSetVoiceDevice'
 )
 
+function Test-Relevant([string]$line) {
+    foreach ($pattern in $patterns) {
+        if ($line -like "*$pattern*") { return $true }
+    }
+    return $false
+}
+
 function Write-Event([string]$line) {
     $record = [ordered]@{
         captured_at = (Get-Date -Format o)
@@ -67,37 +73,33 @@ function Write-Event([string]$line) {
     Write-Host $line
 }
 
-function Get-FileLength([string]$path) {
-    try { return (Get-Item -LiteralPath $path).Length } catch { return 0 }
-}
-
 Write-Host "Watching: $logPath"
 Write-Host "Output:  $OutputDirectory"
+Write-Host "Use mark-ax-phase.ps1 in another PowerShell window to label moments."
 Write-Host "Press Ctrl+C to stop."
 
-$initialLength = Get-FileLength $logPath
-Get-Content -LiteralPath $logPath -Tail 0 | Out-Null
-
-$lastLength = $initialLength
+$lastLineCount = 0
 while ($true) {
-    Start-Sleep -Milliseconds 750
+    Start-Sleep -Milliseconds 500
     if (-not (Test-Path -LiteralPath $logPath)) { continue }
 
-    $length = Get-FileLength $logPath
-    if ($length -lt $lastLength) {
-        $lastLength = 0
+    $all = Get-Content -LiteralPath $logPath
+    $lineCount = @($all).Count
+
+    # Cemu may recreate/truncate its log. If that happens, start from the beginning
+    # of the new file rather than duplicating the old tail.
+    if ($lineCount -lt $lastLineCount) {
+        $lastLineCount = 0
     }
 
-    if ($length -gt $lastLength) {
-        $all = Get-Content -LiteralPath $logPath
-        $startIndex = [Math]::Max(0, $all.Count - 2500)
-        for ($i = $startIndex; $i -lt $all.Count; $i++) {
-            $line = $all[$i]
-            if ($patterns | Where-Object { $line -like "*$_*" }) {
+    if ($lineCount -gt $lastLineCount) {
+        $newLines = $all[$lastLineCount..($lineCount - 1)]
+        foreach ($line in $newLines) {
+            if (Test-Relevant $line) {
                 Write-Event $line
             }
         }
-        $lastLength = $length
         $all | Select-Object -Last 5000 | Set-Content -Encoding UTF8 $rawFile
+        $lastLineCount = $lineCount
     }
 }
