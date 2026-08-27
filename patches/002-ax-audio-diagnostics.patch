@@ -9,7 +9,7 @@ diff --git a/src/Cafe/OS/libs/snd_core/ax_voice.cpp b/src/Cafe/OS/libs/snd_core/
  		if (mix == nullptr)
  			return -3;
 +		cemuLog_log(LogType::SoundAPI,
-+			"LEGO-AUDIO AXSetVoiceDeviceMix voice={} device={} index={} buses=[{:04x}/{}, {:04x}/{}, {:04x}/{}, {:04x}/{}]",
++			"LEGO-AUDIO-DIAG AXSetVoiceDeviceMix voice={} device={} index={} buses=[{:04x}/{}, {:04x}/{}, {:04x}/{}, {:04x}/{}]",
 +			(uint32)vpb->index,
 +			device,
 +			deviceIndex,
@@ -27,7 +27,7 @@ diff --git a/src/Cafe/OS/libs/snd_core/ax_voice.cpp b/src/Cafe/OS/libs/snd_core/
  		internal->veVolume = ve->currentVolume;
  		internal->veDelta = ve->currentDelta;
 +		cemuLog_log(LogType::SoundAPI,
-+			"LEGO-AUDIO AXSetVoiceVe voice={} volume=0x{:04x} delta={}",
++			"LEGO-AUDIO-DIAG AXSetVoiceVe voice={} volume=0x{:04x} delta={}",
 +			(uint32)vpb->index,
 +			(uint32)_swapEndianU16(ve->currentVolume),
 +			(sint32)(sint16)_swapEndianU16((uint16)ve->currentDelta));
