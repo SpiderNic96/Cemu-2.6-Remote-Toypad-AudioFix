@@ -1,9 +1,11 @@
 name: Diagnose LEGO AX audio path
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
+    paths:
+      - '.github/workflows/audio-source-diagnose.yml'
 
 permissions:
   contents: read
@@ -61,7 +63,8 @@ jobs:
             $lines = Get-Content $file
             $report.Add("## $file")
             foreach ($term in $terms) {
-              $matches = Select-String -Path $file -Pattern [regex]::Escape($term)
+              $pattern = [regex]::Escape($term)
+              $matches = Select-String -Path $file -Pattern $pattern
               if ($matches) {
                 $report.Add("### $term")
                 foreach ($m in $matches) {
