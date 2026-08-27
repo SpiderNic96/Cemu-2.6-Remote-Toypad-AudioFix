@@ -1,0 +1,88 @@
+name: Diagnose LEGO AX audio path
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: harrysof/Cemu-2.6-Remote-Toypad-Build
+  UPSTREAM_REF: main
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  diagnose:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout analysis repo
+        uses: actions/checkout@v4
+
+      - name: Clone Harry Cemu 2.6 source
+        run: |
+          git clone --depth 1 --branch $env:UPSTREAM_REF "https://github.com/$env:UPSTREAM_REPO.git" cemu-source
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to clone upstream source' }
+
+      - name: Extract AX voice implementation evidence
+        run: |
+          $files = @(
+            'cemu-source/src/Cafe/OS/libs/snd_core/ax_voice.cpp',
+            'cemu-source/src/Cafe/OS/libs/snd_core/ax_mix.cpp',
+            'cemu-source/src/Cafe/OS/libs/snd_core/ax_exports.cpp'
+          )
+          $terms = @(
+            'AXSetVoiceVe',
+            'AXSetVoiceRmtMix',
+            'AXSetVoiceRmtOn',
+            'AXSetVoiceDeviceMix',
+            'AXSetDefaultMixerSelect',
+            'deviceMixMaskTV',
+            'deviceMixMaskDRC',
+            'deviceMixMaskRMT',
+            'voiceRmtOn'
+          )
+
+          New-Item -ItemType Directory -Force -Path analysis | Out-Null
+          $report = New-Object System.Collections.Generic.List[string]
+          $report.Add('# Cemu 2.6 AX audio source diagnostics')
+          $report.Add('')
+          $report.Add("Upstream: https://github.com/$env:UPSTREAM_REPO")
+          $report.Add("Ref: $env:UPSTREAM_REF")
+          $report.Add('')
+
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) { continue }
+            $lines = Get-Content $file
+            $report.Add("## $file")
+            foreach ($term in $terms) {
+              $matches = Select-String -Path $file -Pattern [regex]::Escape($term)
+              if ($matches) {
+                $report.Add("### $term")
+                foreach ($m in $matches) {
+                  $start = [Math]::Max(1, $m.LineNumber - 12)
+                  $end = [Math]::Min($lines.Count, $m.LineNumber + 28)
+                  for ($i = $start; $i -le $end; $i++) {
+                    $report.Add(('{0}: {1}' -f $i, $lines[$i-1]))
+                  }
+                  $report.Add('---')
+                }
+              }
+            }
+          }
+
+          $report | Set-Content -Encoding UTF8 analysis/AX_AUDIO_SOURCE_DIAGNOSTICS.md
+          Write-Host (Get-Content analysis/AX_AUDIO_SOURCE_DIAGNOSTICS.md -Raw)
+
+      - name: Upload diagnostic report
+        uses: actions/upload-artifact@v4
+        with:
+          name: AX-audio-source-diagnostics
+          path: analysis/AX_AUDIO_SOURCE_DIAGNOSTICS.md
+          if-no-files-found: error
+          retention-days: 14
