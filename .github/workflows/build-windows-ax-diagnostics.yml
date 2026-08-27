@@ -8,6 +8,10 @@ on:
       - '.github/workflows/build-windows-ax-diagnostics.yml'
   workflow_dispatch:
 
+concurrency:
+  group: cemu-2.6-ax-diagnostics
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
