@@ -1,0 +1,35 @@
+diff --git a/src/Cafe/OS/libs/snd_core/ax_mix.cpp b/src/Cafe/OS/libs/snd_core/ax_mix.cpp
+index 3fdca1f..0000000 100644
+--- a/src/Cafe/OS/libs/snd_core/ax_mix.cpp
++++ b/src/Cafe/OS/libs/snd_core/ax_mix.cpp
+@@ -1,6 +1,8 @@
++#include <cstdlib>
++#include <cstring>
+ #include "Cafe/OS/libs/snd_core/ax.h"
+ #include "Cafe/OS/libs/snd_core/ax_internal.h"
+ #include "Cafe/HW/MMU/MMU.h"
+@@ -752,14 +754,17 @@ namespace snd_core
+ 		float a0 = (float)_swapEndianS16(internalShadowCopy->lpf.a0) / 32767.0f;
+ 		float b0 = (float)_swapEndianS16(internalShadowCopy->lpf.b0) / 32767.0f;
+-		float prevSample = (float)_swapEndianS16((sint16)internalShadowCopy->lpf.yn1) * 256.0f / 32767.0f;
++		float prevSample = (float)_swapEndianS16((sint16)internalShadowCopy->lpf.yn1) * 256.0f;
+ 		for (sint32 i = 0; i < sampleCount; i++)
+ 		{
+-			sampleData[i] = a0 * sampleData[i] - b0 * prevSample;
++			sampleData[i] = a0 * sampleData[i] + b0 * prevSample;
+ 			prevSample = sampleData[i];
+ 		}
+-		internalShadowCopy->lpf.yn1 = (uint16)_swapEndianS16((sint16)(prevSample / 256.0f * 32767.0f));
++		float yn1f = prevSample / 256.0f;
++		yn1f = std::min(std::max(yn1f, -32768.0f), 32767.0f);
++		internalShadowCopy->lpf.yn1 = (uint16)_swapEndianS16((sint16)yn1f);
+ 	}
+***
+--- a/src/Cafe/OS/libs/snd_core/ax_aux.cpp
++++ b/src/Cafe/OS/libs/snd_core/ax_aux.cpp
+@@ -1,3 +1,5 @@
++#include <cstdlib>
++#include <cstring>
+ #include "Cafe/OS/libs/snd_core/ax.h"
+ #include "Cafe/OS/libs/snd_core/ax_internal.h"
+*** End Patch
