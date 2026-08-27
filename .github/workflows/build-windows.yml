@@ -38,7 +38,7 @@ jobs:
         run: |
           $upstreamUrl = "https://github.com/$env:UPSTREAM_REPO.git"
           Write-Host "Cloning upstream source from $upstreamUrl"
-          git clone --depth 1 --branch $env:UPstream_REF $upstreamUrl cemu-source
+          git clone --depth 1 --branch $env:UPSTREAM_REF $upstreamUrl cemu-source
           if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source from $upstreamUrl" }
 
           $deps = @(
@@ -89,11 +89,20 @@ jobs:
             Write-Host "Verified $path"
           }
 
-      - name: Apply consolidated LEGO audio source fixes
+      - name: Apply Patch 001 - AUX fallback
+        shell: pwsh
+        working-directory: cemu-source
+        run: |
+          git apply --check ../patches/001-lego-audio-aux-fallback.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Patch 001 does not apply cleanly to the current upstream source' }
+          git apply ../patches/001-lego-audio-aux-fallback.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Patch 001 failed to apply' }
+
+      - name: Apply source-level LEGO audio fixes
         shell: pwsh
         run: |
           python tools/apply-lego-audio-audio-fix.py
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply consolidated LEGO audio source fixes' }
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply source-level LEGO audio fixes' }
           Push-Location cemu-source
           git diff --check
           Pop-Location
