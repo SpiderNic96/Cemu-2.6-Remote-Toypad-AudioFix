@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'patches/001-lego-audio-aux-fallback.patch'
+      - 'tools/apply-lego-audio-audio-fix.py'
       - '.github/workflows/build-windows.yml'
   workflow_dispatch:
 
@@ -37,7 +38,7 @@ jobs:
         run: |
           $upstreamUrl = "https://github.com/$env:UPSTREAM_REPO.git"
           Write-Host "Cloning upstream source from $upstreamUrl"
-          git clone --depth 1 --branch $env:UPSTREAM_REF $upstreamUrl cemu-source
+          git clone --depth 1 --branch $env:UPstream_REF $upstreamUrl cemu-source
           if ($LASTEXITCODE -ne 0) { throw "Failed to clone upstream Toypad source from $upstreamUrl" }
 
           $deps = @(
@@ -88,15 +89,14 @@ jobs:
             Write-Host "Verified $path"
           }
 
-      - name: Apply Patch 001
+      - name: Apply consolidated LEGO audio source fixes
         shell: pwsh
-        working-directory: cemu-source
         run: |
-          git apply --check ../patches/001-lego-audio-aux-fallback.patch
-          if ($LASTEXITCODE -ne 0) { throw 'Patch 001 does not apply cleanly to the current upstream source' }
-          git apply ../patches/001-lego-audio-aux-fallback.patch
-          if ($LASTEXITCODE -ne 0) { throw 'Patch 001 failed to apply' }
+          python tools/apply-lego-audio-audio-fix.py
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply consolidated LEGO audio source fixes' }
+          Push-Location cemu-source
           git diff --check
+          Pop-Location
 
       - name: Setup MSVC build environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -176,24 +176,28 @@ jobs:
           Copy-Item cemu-source/bin/Cemu_release.exe artifact/Cemu_release.exe
           @'
           @echo off
-          echo LEGO Dimensions AudioFix experimental build
+          echo LEGO Dimensions AudioFix - LPF + stereo fold-down + AUX fallback
           echo.
-          echo This build uses Patch 001: opt-in AX AUX return fallback.
+          echo Default: LPF fix enabled, AUX fallback enabled, TV stereo fold-down enabled.
+          echo Optional: set CEMU_LEGO_AUDIO_AUX_FALLBACK=0 to disable AUX fallback.
+          echo Optional: set CEMU_LEGO_TV_FC_DIAG=1 for center-only stereo diagnostics.
           echo.
-          set CEMU_LEGO_AUDIO_AUX_FALLBACK=1
           Cemu_release.exe
           '@ | Set-Content -Encoding ASCII artifact/run-lego-audio-test.cmd
           @'
-          Cemu 2.6 Toypad AudioFix - Patch 001
+          Cemu 2.6 Toypad - LEGO gameplay audio fix build
 
           Base: harrysof/Cemu-2.6-Remote-Toypad-Build
-          Patch: 001-lego-audio-aux-fallback.patch
+          Source fixes:
+            1. AX per-voice low-pass sign and state-scaling correction.
+            2. TV stereo fold-down of L/R + Center + matching surrounds.
+            3. AUX TV fallback enabled by default when no callback is registered.
 
-          To test the experimental path, run run-lego-audio-test.cmd.
-          The script sets CEMU_LEGO_AUDIO_AUX_FALLBACK=1 before starting Cemu.
+          Runtime diagnostics:
+            CEMU_LEGO_AUDIO_AUX_FALLBACK=0 disables the AUX fallback.
+            CEMU_LEGO_TV_FC_DIAG=1 selects center-only stereo output for diagnostics.
 
-          Without that environment variable the experimental audio path is inactive.
-          This is an experimental diagnostic build, not a confirmed final audio fix.
+          This build is intended for LEGO Dimensions gameplay audio validation.
           '@ | Set-Content -Encoding UTF8 artifact/README-AUDIO-TEST.txt
 
       - name: Upload Windows artifact
