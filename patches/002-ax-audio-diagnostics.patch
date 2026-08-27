@@ -1,21 +1,6 @@
 diff --git a/src/Cafe/OS/libs/snd_core/ax_voice.cpp b/src/Cafe/OS/libs/snd_core/ax_voice.cpp
 --- a/src/Cafe/OS/libs/snd_core/ax_voice.cpp
 +++ b/src/Cafe/OS/libs/snd_core/ax_voice.cpp
-@@ -744,9 +744,15 @@
- 	void AXSetVoiceVe(AXVPB* vpb, AXPBVE* ve)
- 	{
- 		AXVPBInternal_t* internal = __AXVPBInternalVoiceArray + (sint32)vpb->index;
- 		internal->veVolume = ve->currentVolume;
- 		internal->veDelta = ve->currentDelta;
-+		cemuLog_log(LogType::SoundAPI,
-+			"LEGO-AUDIO AXSetVoiceVe voice={} volume=0x{:04x} delta={}",
-+			(uint32)vpb->index,
-+			(uint32)_swapEndianU16(ve->currentVolume),
-+			(sint32)(sint16)_swapEndianU16((uint16)ve->currentDelta));
- 		AXSetSyncFlag(vpb, AX_SYNCFLAG_VE);
- 		AXVoiceProtection_Acquire(vpb);
- 	}
-*** Update File: src/Cafe/OS/libs/snd_core/ax_voice.cpp
 @@ -556,6 +556,14 @@
  	sint32 AXSetVoiceDeviceMix(AXVPB* vpb, sint32 device, sint32 deviceIndex, AXCHMIX_DEPR* mix)
  	{
@@ -35,4 +20,17 @@ diff --git a/src/Cafe/OS/libs/snd_core/ax_voice.cpp b/src/Cafe/OS/libs/snd_core/
  		sint32 r = AXIsValidDevice(device, deviceIndex);
  		if (r)
  			return r;
-*** End Patch
+@@ -744,9 +752,15 @@
+ 	void AXSetVoiceVe(AXVPB* vpb, AXPBVE* ve)
+ 	{
+ 		AXVPBInternal_t* internal = __AXVPBInternalVoiceArray + (sint32)vpb->index;
+ 		internal->veVolume = ve->currentVolume;
+ 		internal->veDelta = ve->currentDelta;
++		cemuLog_log(LogType::SoundAPI,
++			"LEGO-AUDIO AXSetVoiceVe voice={} volume=0x{:04x} delta={}",
++			(uint32)vpb->index,
++			(uint32)_swapEndianU16(ve->currentVolume),
++			(sint32)(sint16)_swapEndianU16((uint16)ve->currentDelta));
+ 		AXSetSyncFlag(vpb, AX_SYNCFLAG_VE);
+ 		AXVoiceProtection_Acquire(vpb);
+ 	}
